@@ -292,6 +292,8 @@ class NoonLine(NoonEntity):
 		newLine.lightsOn = lightsOn
 		newLine.dimmingLevel = dimmingLevel
 
+		return newLine
+
 	def __str__(self):
 		"""Returns a pretty-printed string for this object."""
 		return 'Line name: "%s" lights on: %s, dim level: "%s"' % (
@@ -323,6 +325,8 @@ class NoonScene(NoonEntity):
 			_LOGGER.debug("Invalid JSON payload: {}".format(json))
 			raise NoonInvalidJsonError
 		newScene = NoonScene(noon, guid, name)
+
+		return newScene
 
 	def __str__(self):
 		"""Returns a pretty-printed string for this object."""
