@@ -259,6 +259,21 @@ class NoonLine(NoonEntity):
 		if valueChanged:
 			self._dispatch_event(NoonLine.Event.DIM_LEVEL_CHANGED, {'dimLevel': self._dimmingLevel})
 
+	def set_brightness(self, brightnessLevel):
+
+		actionUrl = "{}/api/action/line/lightLevel".format(self._noon.endpoints["action"])
+		result = self._noon.session.post(actionUrl, headers={"Authorization": "Token {}".format(self._noon.authToken)}, json={"line": self.guid, "lightLevel": brightnessLevel, "tid": 55555})
+		_LOGGER.error("Got result: {}".format(result))
+	
+
+	def turn_on(self):
+		
+		self.set_brightness(100)
+
+	def turn_off(self):
+		
+		self.set_brightness(0)
+
 	def __init__(self, noon, space, guid, name, dimmingLevel=None, lightsOn=None):
 		
 		"""Initializes the Space."""
@@ -387,6 +402,18 @@ class Noon(object):
 		self.__lines = {}
 		self.__scenes = {}
 		
+
+	@property
+	def endpoints(self):
+		return self.__endpoints
+
+	@property
+	def session(self):
+		return self.__session
+
+	@property
+	def authToken(self):
+		return self.__token
 
 	def authenticate(self):
 
