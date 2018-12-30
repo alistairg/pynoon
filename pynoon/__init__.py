@@ -193,12 +193,12 @@ class NoonSpace(NoonEntity):
 
 		"""Scenes"""
 		for scene in json.get("scenes", []):
-			thisScene = NoonScene.fromJsonObject(noon, scene)
+			thisScene = NoonScene.fromJsonObject(noon, newSpace, scene)
 			newSpace._scenes.append(thisScene)
 
 		"""Lines"""
 		for device in json.get("devices", []):
-			thisLine = NoonLine.fromJsonObject(noon, device.get("line", None))
+			thisLine = NoonLine.fromJsonObject(noon, newSpace, device.get("line", None))
 			newSpace._lines.append(thisLine)
 
 		""" Status """
@@ -246,6 +246,10 @@ class NoonLine(NoonEntity):
 			self._dispatch_event(NoonLine.Event.LIGHTS_ON_CHANGED, {'lightsOn': self._lightsOn})
 
 	@property
+	def parentSpace(self):
+		return self._parentSpace
+
+	@property
 	def dimmingLevel(self):
 		return self._dimmingLevel
 	@dimmingLevel.setter
@@ -255,11 +259,12 @@ class NoonLine(NoonEntity):
 		if valueChanged:
 			self._dispatch_event(NoonLine.Event.DIM_LEVEL_CHANGED, {'dimLevel': self._dimmingLevel})
 
-	def __init__(self, noon, guid, name, dimmingLevel=None, lightsOn=None):
+	def __init__(self, noon, space, guid, name, dimmingLevel=None, lightsOn=None):
 		
 		"""Initializes the Space."""
 		self._lightsOn = None
 		self._dimmingLevel = None
+		self._parentSpace = space
 		super(NoonLine, self).__init__(noon, guid, name)
 
 		""" Trigger any initial updates """
@@ -267,7 +272,7 @@ class NoonLine(NoonEntity):
 		self.dimmingLevel = dimmingLevel
 
 	@classmethod
-	def fromJsonObject(cls, noon, json):
+	def fromJsonObject(cls, noon, space, json):
 
 		"""Sanity Check"""
 		if not isinstance(noon, Noon):
@@ -284,7 +289,7 @@ class NoonLine(NoonEntity):
 		if guid is None or name is None:
 			_LOGGER.debug("Invalid JSON payload: {}".format(json))
 			raise NoonInvalidJsonError
-		newLine = NoonLine(noon, guid, name)
+		newLine = NoonLine(noon, space, guid, name)
 
 		""" Status """
 		lightsOn = json.get("lineState", None)
@@ -306,8 +311,14 @@ class NoonLine(NoonEntity):
 
 class NoonScene(NoonEntity):
 
+	def __init__(self, noon, space, guid, name, dimmingLevel=None, lightsOn=None):
+		
+		"""Initializes the Space."""
+		self._parentSpace = space
+		super(NoonScene, self).__init__(noon, guid, name)
+
 	@classmethod
-	def fromJsonObject(cls, noon, json):
+	def fromJsonObject(cls, noon, space, json):
 
 		"""Sanity Check"""
 		if not isinstance(noon, Noon):
@@ -324,7 +335,7 @@ class NoonScene(NoonEntity):
 		if guid is None or name is None:
 			_LOGGER.debug("Invalid JSON payload: {}".format(json))
 			raise NoonInvalidJsonError
-		newScene = NoonScene(noon, guid, name)
+		newScene = NoonScene(noon, space, guid, name)
 
 		return newScene
 
