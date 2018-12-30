@@ -1,2 +1,4 @@
 /.vscode
 /pynoon/__pycache__
+/pynoon.egg-info
+/dist
