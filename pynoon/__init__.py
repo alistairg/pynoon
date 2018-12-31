@@ -137,6 +137,17 @@ class NoonSpace(NoonEntity):
 			self._dispatch_event(NoonSpace.Event.LIGHTSON_CHANGED, {'lightsOn': self._lightsOn})
 
 	@property
+	def activeSceneName(self):
+		if self.activeScene is not None:
+			scene = self._scenes.get(self.activeScene, None)
+			if scene:
+				return scene.name
+			else:
+				return "Unknown"
+		else:
+			return "Unknown"
+
+	@property
 	def activeScene(self):
 		return self._activeScene
 	@activeScene.setter
@@ -160,6 +171,25 @@ class NoonSpace(NoonEntity):
 		self._activeScene = actualValue
 		if valueChanged:
 			self._dispatch_event(NoonSpace.Event.SCENE_CHANGED, {'sceneId': self._activeScene})
+
+	def setSceneActive(self, active=True):
+
+		""" (Re)authenticate if needed """
+		self._noon.authenticate()
+
+		""" Send the command """
+		actionUrl = "{}/api/action/space/scene".format(self._noon.endpoints["action"])
+		result = self._noon.session.post(actionUrl, headers={"Authorization": "Token {}".format(self._noon.authToken)}, json={"space": self.guid, "activeScene": self.activeScene, "on": False, "tid": 55555})
+		_LOGGER.debug("Got activate scene result: {}".format(result))
+
+
+	def activateScene(self):
+
+		self.setSceneActive(active=True)
+
+	def deactivateScene(self):
+
+		self.setSceneActive(active=False)
 
 	def __init__(self, noon, guid, name, activeScene=None, lightsOn=None, lines={}, scenes={}):
 		
