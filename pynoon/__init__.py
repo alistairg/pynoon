@@ -290,7 +290,7 @@ class NoonLine(NoonEntity):
 		
 		self.set_brightness(0)
 
-	def __init__(self, noon, space, guid, name, dimmingLevel=None, lightsOn=None):
+	def __init__(self, noon, space, guid, name, dimmingLevel=None, lineState=None):
 		
 		"""Initializes the Space."""
 		self._lineState = None
@@ -299,7 +299,7 @@ class NoonLine(NoonEntity):
 		super(NoonLine, self).__init__(noon, guid, name)
 
 		""" Trigger any initial updates """
-		self.lightsOn = lightsOn
+		self.lineState = lineState
 		self.dimmingLevel = dimmingLevel
 
 	@classmethod
@@ -323,9 +323,9 @@ class NoonLine(NoonEntity):
 		newLine = NoonLine(noon, space, guid, name)
 
 		""" Status """
-		lightsOn = json.get("lineState", None)
+		lineState = json.get("lineState", None)
 		dimmingLevel = json.get("dimmingLevel", None)
-		newLine.lightsOn = lightsOn
+		newLine.lineState = lineState
 		newLine.dimmingLevel = dimmingLevel
 
 		return newLine
@@ -333,16 +333,16 @@ class NoonLine(NoonEntity):
 	def __str__(self):
 		"""Returns a pretty-printed string for this object."""
 		return 'Line name: "%s" lights on: %s, dim level: "%s"' % (
-			self._name, self._lightsOn, self._dimmingLevel)
+			self._name, self._lineState, self._dimmingLevel)
 
 	def __repr__(self):
 		"""Returns a stringified representation of this object."""
 		return str({'name': self._name, 'dimmingLevel': self._dimmingLevel,
-					'lightsOn': self._lightsOn, 'id': self._guid})
+					'lightsOn': self._lineState, 'id': self._guid})
 
 class NoonScene(NoonEntity):
 
-	def __init__(self, noon, space, guid, name, dimmingLevel=None, lightsOn=None):
+	def __init__(self, noon, space, guid, name):
 		
 		"""Initializes the Space."""
 		self._parentSpace = space
