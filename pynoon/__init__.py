@@ -14,6 +14,7 @@ import requests
 import websocket
 import threading
 import json
+import time
 
 from typing import Any, Callable, Dict, Type
 
@@ -22,9 +23,6 @@ from pynoon.const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# Enable debug logging
-_LOGGER.setLevel(10)
 
 NoonEventHandler = Callable[['NoonEntity', Any, 'NoonEvent', Dict], None]
 
@@ -78,9 +76,9 @@ class NoonEntity(object):
 
 	def _dispatch_event(self, event: NoonEvent, params: Dict):
 		"""Dispatches the specified event to all the subscribers."""
-		_LOGGER.error("Sending notifications!")
+		_LOGGER.debug("Sending notifications!")
 		for handler, context in self._subscribers:
-			_LOGGER.error("...notification sent.")
+			_LOGGER.debug("...notification sent.")
 			handler(self, context, event, params)
 
 	def subscribe(self, handler: NoonEventHandler, context):
@@ -92,7 +90,7 @@ class NoonEntity(object):
 				params: a dict of event-specific parameters
 		context: User-supplied, opaque object that will be passed to handler.
 		"""
-		_LOGGER.error("Added update subscriber for {}".format(self.name))
+		_LOGGER.debug("Added update subscriber for {}".format(self.name))
 		self._subscribers.append((handler, context))
 	
 	def handle_update(self, args):
@@ -156,7 +154,7 @@ class NoonSpace(NoonEntity):
 			return
 
 		""" Debug """
-		_LOGGER.error("Scene for space '{}' changed to '{}'".format(self.name, newScene.name))
+		_LOGGER.info("Scene for space '{}' changed to '{}'".format(self.name, newScene.name))
 
 		valueChanged = (self._activeScene != actualValue)
 		self._activeScene = actualValue
@@ -277,9 +275,13 @@ class NoonLine(NoonEntity):
 
 	def set_brightness(self, brightnessLevel):
 
+		""" (Re)authenticate if needed """
+		self._noon.authenticate()
+
+		""" Send the command """
 		actionUrl = "{}/api/action/line/lightLevel".format(self._noon.endpoints["action"])
 		result = self._noon.session.post(actionUrl, headers={"Authorization": "Token {}".format(self._noon.authToken)}, json={"line": self.guid, "lightLevel": brightnessLevel, "tid": 55555})
-		_LOGGER.error("Got result: {}".format(result))
+		_LOGGER.debug("Got set_brightness result: {}".format(result))
 	
 
 	def turn_on(self):
@@ -405,6 +407,7 @@ class Noon(object):
 		# Key internal flags
 		self.__authenticated = False
 		self.__token = None
+		self.__tokenValidUntilEpoch = 0
 		self.__session = requests.Session()
 		self.__subscribed = False
 
@@ -434,13 +437,27 @@ class Noon(object):
 
 	def authenticate(self):
 
+		""" Do we already have valid tokens? """
+		if self.__token is not None and self.__tokenValidUntilEpoch < time.time():
+			return
+
 		""" Authenticate user, and get tokens """
 		_LOGGER.debug("Authenticating...")
 		result = self.__session.post(LOGIN_URL, json={"email": self.__username, "password": self.__password}).json()
 		if isinstance(result, dict) and result.get("token") is not None:
+
+			""" Debug """
 			_LOGGER.debug("Authenticated successfully with Noon")
+
+			""" Store the token and expiry time """
 			self.authenticated = True
 			self.__token = result.get("token")
+			self.__tokenValidUntilEpoch = time.time() + result.get("lifetime",0) - 30
+
+			""" Get endpoints if needed """
+			if len(self.__endpoints) == 0:
+				self._refreshEndpoints
+
 			self._refreshEndpoints()
 		else:
 			_LOGGER.debug("Response: {}".format(result))
@@ -502,6 +519,9 @@ class Noon(object):
 	
 	def discoverDevices(self):
 
+		""" (Re)authenticate if needed """
+		self.authenticate()
+
 		""" Get the device details for this account """
 		_LOGGER.debug("Refreshing devices...")
 		queryUrl = "{}/api/query".format(self.__endpoints["query"])
@@ -522,6 +542,9 @@ class Noon(object):
 
 
 	def connect(self):
+
+		""" (Re)authenticate if needed """
+		self.authenticate()
 
 		if not self.__subscribed:
 			self.__subscribed = True
@@ -545,10 +568,7 @@ class Noon(object):
 			on_close = _on_websocket_close)
 		self.__websocket.on_open = _on_websocket_open
 		self.__websocket.parent = self
-		self.__websocket.run_forever()
-
-		#eventStreamUrl = "{}/api/notifications".format(self.__endpoints["notification-ws"])
-		
+		self.__websocket.run_forever(ping_interval=30)
 
 		return True
 
