@@ -525,10 +525,9 @@ class Noon(object):
 
 		if not self.__subscribed:
 			self.__subscribed = True
-			#self.__event_handle = threading.Event()
-			#event_thread = threading.Thread(target=self._thread_event_function)
-			#event_thread.start()
-			self._thread_event_function()
+			self.__event_handle = threading.Event()
+			event_thread = threading.Thread(target=self._thread_event_function)
+			event_thread.start()
 		else:
 			_LOGGER.error("Already attached to event stream!")
 
