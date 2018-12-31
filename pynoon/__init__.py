@@ -13,6 +13,7 @@ import logging
 import requests
 import websocket
 import threading
+import json
 
 from typing import Any, Callable, Dict, Type
 
@@ -77,7 +78,9 @@ class NoonEntity(object):
 
 	def _dispatch_event(self, event: NoonEvent, params: Dict):
 		"""Dispatches the specified event to all the subscribers."""
+		_LOGGER.error("Sending notifications!")
 		for handler, context in self._subscribers:
+			_LOGGER.error("...notification sent.")
 			handler(self, context, event, params)
 
 	def subscribe(self, handler: NoonEventHandler, context):
@@ -89,6 +92,7 @@ class NoonEntity(object):
 				params: a dict of event-specific parameters
 		context: User-supplied, opaque object that will be passed to handler.
 		"""
+		_LOGGER.error("Added update subscriber for {}".format(self.name))
 		self._subscribers.append((handler, context))
 	
 	def handle_update(self, args):
@@ -139,12 +143,27 @@ class NoonSpace(NoonEntity):
 		return self._activeScene
 	@activeScene.setter
 	def activeScene(self, value):
-		valueChanged = (self._activeScene != value)
-		self._activeScene = value
+
+		""" This may be a dict object - {"guid": "some-guid-value-here"} """
+		actualValue = value
+		if isinstance(actualValue, Dict) and actualValue.get("guid", None) is not None:
+			actualValue = actualValue.get("guid")
+
+		""" Sanity check - we should have a scene for this """
+		newScene = self._scenes.get(actualValue, None)
+		if newScene is None:
+			_LOGGER.error("Space changed to new scene '{}', but this scene is unknown!".format(actualValue))
+			return
+
+		""" Debug """
+		_LOGGER.error("Scene for space '{}' changed to '{}'".format(self.name, newScene.name))
+
+		valueChanged = (self._activeScene != actualValue)
+		self._activeScene = actualValue
 		if valueChanged:
 			self._dispatch_event(NoonSpace.Event.SCENE_CHANGED, {'sceneId': self._activeScene})
 
-	def __init__(self, noon, guid, name, activeScene=None, lightsOn=None, lines=[], scenes=[]):
+	def __init__(self, noon, guid, name, activeScene=None, lightsOn=None, lines={}, scenes={}):
 		
 		"""Initializes the Space."""
 		self._activeScene = None
@@ -192,14 +211,18 @@ class NoonSpace(NoonEntity):
 		newSpace = NoonSpace(noon, guid, name)
 
 		"""Scenes"""
+		scenesMap = {}
 		for scene in json.get("scenes", []):
 			thisScene = NoonScene.fromJsonObject(noon, newSpace, scene)
-			newSpace._scenes.append(thisScene)
+			scenesMap[thisScene.guid] = thisScene
+		newSpace._scenes = scenesMap
 
 		"""Lines"""
+		linesMap = {}
 		for device in json.get("devices", []):
 			thisLine = NoonLine.fromJsonObject(noon, newSpace, device.get("line", None))
-			newSpace._lines.append(thisLine)
+			linesMap[thisLine.guid] = thisLine
+		newSpace._lines = linesMap
 
 		""" Status """
 		lightsOn = json.get("lightsOn", None)
@@ -221,29 +244,22 @@ class NoonLine(NoonEntity):
 		DIM_LEVEL_CHANGED = 1
 
 		"""
-		LIGHTS_ON_CHANGED: The line lights have turned or off.
+		LINE_STATE_CHANGED: The line lights have turned or off.
 			Params:
-			lightsOn: Lights are on (boolean)
+			lineState: Line State (string - 'on' or 'off')
 		"""
-		LIGHTS_ON_CHANGED = 2
+		LINE_STATE_CHANGED = 2
 
 	@property
-	def lightsOn(self):
-		return self._lightsOn
-	@lightsOn.setter
-	def lightsOn(self, value):
+	def lineState(self):
+		return self._lineState
+	@lineState.setter
+	def lineState(self, value):
 
-		""" Map the value back to a boolean """
-		actualValue = value
-		if actualValue == "on":
-			actualValue = True
-		elif actualValue == "off":
-			actualValue = False
-
-		valueChanged = (self._lightsOn != actualValue)
-		self._lightsOn = actualValue
+		valueChanged = (self._lineState != value)
+		self._lineState = value
 		if valueChanged:
-			self._dispatch_event(NoonLine.Event.LIGHTS_ON_CHANGED, {'lightsOn': self._lightsOn})
+			self._dispatch_event(NoonLine.Event.LINE_STATE_CHANGED, {'lineState': self._lineState})
 
 	@property
 	def parentSpace(self):
@@ -277,7 +293,7 @@ class NoonLine(NoonEntity):
 	def __init__(self, noon, space, guid, name, dimmingLevel=None, lightsOn=None):
 		
 		"""Initializes the Space."""
-		self._lightsOn = None
+		self._lineState = None
 		self._dimmingLevel = None
 		self._parentSpace = space
 		super(NoonLine, self).__init__(noon, guid, name)
@@ -401,6 +417,7 @@ class Noon(object):
 		self.__spaces = {}
 		self.__lines = {}
 		self.__scenes = {}
+		self.__allEntities = {}
 		
 
 	@property
@@ -441,6 +458,9 @@ class Noon(object):
 			raise NoonAuthenticationError
 
 	def _registerEntity(self, entity: NoonEntity):
+
+		""" EVERYTHING """
+		self.__allEntities[entity.guid] = entity
 
 		""" SPACE """
 		if isinstance(entity, NoonSpace):
@@ -533,10 +553,69 @@ class Noon(object):
 
 		return True
 
+	def _handle_change(self, changeSummary):
+
+		guid = changeSummary.get("guid", None)
+		if guid is None:
+			_LOGGER.error("Cannot process change - no GUID in {}".format(changeSummary))
+			return
+
+		affectedEntity = self.__allEntities.get(guid, None)
+		if affectedEntity is None:
+			_LOGGER.warn("Got change notification for {}, but not an expected entity!".format(guid))
+			return
+
+		_LOGGER.error("Got change notification for '{}' - {}".format(affectedEntity.name, changeSummary))
+		changedFields = changeSummary.get("fields", [])
+		writeableFields = [attr for attr, value in vars(affectedEntity.__class__).items()
+                 if isinstance(value, property) and value.fset is not None]
+		_LOGGER.error("Settable fields for this entity - {}".format(writeableFields))
+		for changedField in changedFields:
+			key = changedField.get("name")
+			value = changedField.get("value")
+			if key in writeableFields:
+				_LOGGER.error("...setting {} = {}".format(key, value))
+				setattr(affectedEntity, key, value)
+			else:
+				_LOGGER.error("...ignoring {} = {}".format(key, value))
+			
+
+	def _websocket_message(self, message):
+		
+		""" Ignore empty messages """
+		if message is None or len(message) < 5:
+			return
+
+		""" Attempt to parse the message """
+		try:
+			jsonMessage = json.loads(message)
+		except:
+			_LOGGER.debug("Failed to parse message: {}".format(message))
+			return
+
+		""" What sort of message is this? """
+		if isinstance(jsonMessage, Dict):
+
+			""" State change notification """
+			if jsonMessage.get("event", None) == "notification" and isinstance(jsonMessage.get("data"), Dict):
+				data = jsonMessage.get("data")
+				changes = data.get("changes", [])
+				for change in changes:
+					self._handle_change(change)
+					
+			else:
+				_LOGGER.error("Unexpected notifiction - {}".format(jsonMessage))
+
+		else:
+
+			_LOGGER.error("Invalid notifiction - {}".format(jsonMessage))
+
+
+
 
 def _on_websocket_message(ws, message): 
 
-		_LOGGER.error("Websocket: Got message - {}".format(message))
+		ws.parent._websocket_message(message)
 
 def _on_websocket_error(ws, error): 
 
