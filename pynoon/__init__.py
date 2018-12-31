@@ -533,7 +533,7 @@ class Noon(object):
 				thisSpace = NoonSpace.fromJsonObject(self, space)
 
 				# Debug
-				_LOGGER.error("Discovered space '{}'".format(thisSpace.name))
+				_LOGGER.debug("Discovered space '{}'".format(thisSpace.name))
 				
 
 		else:
@@ -581,22 +581,22 @@ class Noon(object):
 
 		affectedEntity = self.__allEntities.get(guid, None)
 		if affectedEntity is None:
-			_LOGGER.warn("Got change notification for {}, but not an expected entity!".format(guid))
+			_LOGGER.debug("Got change notification for {}, but not an expected entity!".format(guid))
 			return
 
-		_LOGGER.error("Got change notification for '{}' - {}".format(affectedEntity.name, changeSummary))
+		_LOGGER.debug("Got change notification for '{}' - {}".format(affectedEntity.name, changeSummary))
 		changedFields = changeSummary.get("fields", [])
 		writeableFields = [attr for attr, value in vars(affectedEntity.__class__).items()
                  if isinstance(value, property) and value.fset is not None]
-		_LOGGER.error("Settable fields for this entity - {}".format(writeableFields))
+		_LOGGER.debug("Settable fields for this entity - {}".format(writeableFields))
 		for changedField in changedFields:
 			key = changedField.get("name")
 			value = changedField.get("value")
 			if key in writeableFields:
-				_LOGGER.error("...setting {} = {}".format(key, value))
+				_LOGGER.debug("...setting {} = {}".format(key, value))
 				setattr(affectedEntity, key, value)
 			else:
-				_LOGGER.error("...ignoring {} = {}".format(key, value))
+				_LOGGER.debug("...ignoring {} = {}".format(key, value))
 			
 
 	def _websocket_message(self, message):
@@ -646,4 +646,4 @@ def _on_websocket_close(ws):
 
 def _on_websocket_open(ws): 
 
-		_LOGGER.error("Websocket: Opened")
+		_LOGGER.debug("Websocket: Opened")
