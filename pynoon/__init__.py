@@ -179,7 +179,7 @@ class NoonSpace(NoonEntity):
 
 		""" Send the command """
 		actionUrl = "{}/api/action/space/scene".format(self._noon.endpoints["action"])
-		result = self._noon.session.post(actionUrl, headers={"Authorization": "Token {}".format(self._noon.authToken)}, json={"space": self.guid, "activeScene": self.activeScene, "on": False, "tid": 55555})
+		result = self._noon.session.post(actionUrl, headers={"Authorization": "Token {}".format(self._noon.authToken)}, json={"space": self.guid, "activeScene": self.activeScene, "on": active, "tid": 55555})
 		_LOGGER.debug("Got activate scene result: {}".format(result))
 
 
