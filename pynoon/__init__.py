@@ -172,14 +172,33 @@ class NoonSpace(NoonEntity):
 		if valueChanged:
 			self._dispatch_event(NoonSpace.Event.SCENE_CHANGED, {'sceneId': self._activeScene})
 
-	def setSceneActive(self, active=True):
+	def setSceneActive(self, active=None, sceneIdOrName=None):
 
 		""" (Re)authenticate if needed """
 		self._noon.authenticate()
 
+		""" Replace variables """
+		if active is None:
+			active = self.lightsOn
+		if sceneIdOrName is None:
+			sceneIdOrName = self.activeScene
+
+		""" Get the scene """
+		targetScene = self._scenes.get(sceneIdOrName, None)
+		if targetScene is None:
+			for id, scene in self._scenes.items():
+				if scene.name == sceneIdOrName:
+					targetScene = scene
+		
+		""" Sanity Check """
+		if targetScene is None:
+			_LOGGER.error("Did not find scene in space '{}' with name or ID {}".format(self.name, sceneIdOrName))
+			raise NoonInvalidParametersError
+
 		""" Send the command """
+		_LOGGER.debug("Attempting to activate scene {} in space '{}', with active = {}".format(targetScene.name, self.name, active))
 		actionUrl = "{}/api/action/space/scene".format(self._noon.endpoints["action"])
-		result = self._noon.session.post(actionUrl, headers={"Authorization": "Token {}".format(self._noon.authToken)}, json={"space": self.guid, "activeScene": self.activeScene, "on": active, "tid": 55555})
+		result = self._noon.session.post(actionUrl, headers={"Authorization": "Token {}".format(self._noon.authToken)}, json={"space": self.guid, "activeScene": targetScene.guid, "on": active, "tid": 55555})
 		_LOGGER.debug("Got activate scene result: {}".format(result))
 
 
@@ -469,6 +488,7 @@ class Noon(object):
 
 		""" Do we already have valid tokens? """
 		if self.__token is not None and self.__tokenValidUntilEpoch < time.time():
+			_LOGGER.debug("Using cached token, which should still be valid")
 			return
 
 		""" Authenticate user, and get tokens """
@@ -483,7 +503,7 @@ class Noon(object):
 			self.authenticated = True
 			self.__token = result.get("token")
 			self.__tokenValidUntilEpoch = time.time() + result.get("lifetime",0) - 30
-
+			
 			""" Get endpoints if needed """
 			if len(self.__endpoints) == 0:
 				self._refreshEndpoints
