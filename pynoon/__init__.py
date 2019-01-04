@@ -23,6 +23,7 @@ from pynoon.const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+#logging.basicConfig(level=logging.DEBUG, format='%(message)s')
 
 NoonEventHandler = Callable[['NoonEntity', Any, 'NoonEvent', Dict], None]
 
@@ -465,6 +466,10 @@ class Noon(object):
 		self.__password = password
 		self.__endpoints = {}
 
+		# Flag for tracking errors
+		self.__errorCount = 0
+		self.__lastConnectAttempt = 0
+
 		# External Properties
 		self.__spaces = {}
 		self.__lines = {}
@@ -487,12 +492,12 @@ class Noon(object):
 	def authenticate(self):
 
 		""" Do we already have valid tokens? """
-		if self.__token is not None and self.__tokenValidUntilEpoch < time.time():
-			_LOGGER.debug("Using cached token, which should still be valid")
+		if self.__token is not None and self.__tokenValidUntilEpoch > time.time():
+			_LOGGER.debug("Using cached token, which should still be valid (expires in {}s)".format(round(self.__tokenValidUntilEpoch - time.time()) / 1000))
 			return
 
 		""" Authenticate user, and get tokens """
-		_LOGGER.debug("Authenticating...")
+		_LOGGER.debug("No valid token or token expired. Authenticating...")
 		result = self.__session.post(LOGIN_URL, json={"email": self.__username, "password": self.__password}).json()
 		if isinstance(result, dict) and result.get("token") is not None:
 
@@ -502,7 +507,8 @@ class Noon(object):
 			""" Store the token and expiry time """
 			self.authenticated = True
 			self.__token = result.get("token")
-			self.__tokenValidUntilEpoch = time.time() + result.get("lifetime",0) - 30
+			self.__tokenValidUntilEpoch = round(time.time() + (result.get("lifetime",0) * 1000) - 30000)
+			_LOGGER.debug("Authenticated. Token expires at {}".format(self.__tokenValidUntilEpoch))
 			
 			""" Get endpoints if needed """
 			if len(self.__endpoints) == 0:
@@ -596,6 +602,7 @@ class Noon(object):
 		""" (Re)authenticate if needed """
 		self.authenticate()
 
+		""" Connect on a separate thread """
 		if not self.__subscribed:
 			self.__subscribed = True
 			self.__event_handle = threading.Event()
@@ -607,6 +614,7 @@ class Noon(object):
 
 	def _thread_event_function(self):
 		self.__subscribed = True
+		self.__lastConnectAttempt = time.time()
 		websocket.enableTrace(True)
 		eventStreamUrl = "{}/api/notifications".format(self.__endpoints["notification-ws"])
 		self.__websocket = websocket.WebSocketApp(eventStreamUrl, 
@@ -648,6 +656,24 @@ class Noon(object):
 			else:
 				_LOGGER.debug("...ignoring {} = {}".format(key, value))
 			
+
+	def _websocket_connected(self):
+
+		_LOGGER.debug("Successful connection. Resetting error timers.")
+		self.__errorCount = 0
+
+
+	def _websocket_disconnected(self):
+
+		""" Flag disconnected """
+		self.__subscribed = False
+
+		""" Look at our failure time. If it's within the last 30 seconds, we'll abort rather than spam Noon's servers """
+		if self.__lastConnectAttempt < (time.time() - 30000):
+			_LOGGER.error("Failed to open websocket connection on first attempt. Giving up.")
+			raise NoonException
+		else:
+			self.connect()
 
 	def _websocket_message(self, message):
 		
@@ -693,7 +719,9 @@ def _on_websocket_error(ws, error):
 def _on_websocket_close(ws): 
 
 		_LOGGER.error("Websocket: Closed")
+		ws.parent._websocket_disconnected()
 
 def _on_websocket_open(ws): 
 
 		_LOGGER.debug("Websocket: Opened")
+		ws.parent._websocket_connected()
