@@ -14,7 +14,7 @@ import requests
 import websocket
 import threading
 import json
-import time
+import datetime
 
 from typing import Any, Callable, Dict, Type
 
@@ -457,7 +457,7 @@ class Noon(object):
 		# Key internal flags
 		self.__authenticated = False
 		self.__token = None
-		self.__tokenValidUntilEpoch = 0
+		self.__tokenValidUntil = datetime.datetime.now()
 		self.__session = requests.Session()
 		self.__subscribed = False
 
@@ -492,8 +492,8 @@ class Noon(object):
 	def authenticate(self):
 
 		""" Do we already have valid tokens? """
-		if self.__token is not None and self.__tokenValidUntilEpoch > time.time():
-			_LOGGER.debug("Using cached token, which should still be valid (expires in {}s)".format(round(self.__tokenValidUntilEpoch - time.time()) / 1000))
+		if self.__token is not None and self.__tokenValidUntil > datetime.datetime.now():
+			_LOGGER.debug("Using cached token, which should still be valid")
 			return
 
 		""" Authenticate user, and get tokens """
@@ -507,8 +507,8 @@ class Noon(object):
 			""" Store the token and expiry time """
 			self.authenticated = True
 			self.__token = result.get("token")
-			self.__tokenValidUntilEpoch = round(time.time() + (result.get("lifetime",0) * 1000) - 30000)
-			_LOGGER.debug("Authenticated. Token expires at {}".format(self.__tokenValidUntilEpoch))
+			self.__tokenValidUntil = datetime.datetime.now() + datetime.timedelta(seconds = (result.get("lifetime",0)-30))
+			_LOGGER.debug("Authenticated. Token expires at {:%H:%M:%S}.".format(self.__tokenValidUntil))
 			
 			""" Get endpoints if needed """
 			if len(self.__endpoints) == 0:
@@ -614,8 +614,8 @@ class Noon(object):
 
 	def _thread_event_function(self):
 		self.__subscribed = True
-		self.__lastConnectAttempt = time.time()
-		websocket.enableTrace(True)
+		self.__lastConnectAttempt = datetime.datetime.now()
+		websocket.enableTrace(False)
 		eventStreamUrl = "{}/api/notifications".format(self.__endpoints["notification-ws"])
 		self.__websocket = websocket.WebSocketApp(eventStreamUrl, 
 			header = {
@@ -669,7 +669,7 @@ class Noon(object):
 		self.__subscribed = False
 
 		""" Look at our failure time. If it's within the last 30 seconds, we'll abort rather than spam Noon's servers """
-		if self.__lastConnectAttempt < (time.time() - 30000):
+		if self.__lastConnectAttempt < (datetime.datetime.now() - datetime.timedelta(seconds = 30)):
 			_LOGGER.error("Failed to open websocket connection on first attempt. Giving up.")
 			raise NoonException
 		else:
