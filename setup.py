@@ -4,7 +4,7 @@ import setuptools
 
 setuptools.setup(
     name = 'pynoon',
-    version = '0.0.15',
+    version = '0.0.16',
     license = 'MIT',
     description = 'Python library for Noon Home',
     author = 'Alistair Galbraith',
